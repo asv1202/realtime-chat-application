@@ -10,6 +10,7 @@ const sequelize = new Sequelize('chat-app', 'postgres', 'Atharva@2037', {
     dialect: 'postgres'
 });
 
+// Define User model
 const User = sequelize.define('User', {
     username: {
         type: DataTypes.STRING,
@@ -22,6 +23,7 @@ const User = sequelize.define('User', {
     }
 });
 
+// Define Message model
 const Message = sequelize.define('Message', {
     senderId: {
         type: DataTypes.INTEGER,
@@ -41,8 +43,10 @@ const Message = sequelize.define('Message', {
     }
 });
 
+// Sync models with the database
 sequelize.sync();
 
+// Express app setup
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -55,16 +59,15 @@ const io = socketIo(server, {
     }
 });
 
+// Login endpoint
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        // Log incoming credentials
         console.log('Login attempt with:', { username, password });
 
         const user = await User.findOne({ where: { username, password } });
 
-        // Check if user is found
         if (user) {
             console.log('User found:', user);
             res.status(200).json({ id: user.id, username: user.username });
@@ -78,44 +81,57 @@ app.post('/login', async (req, res) => {
     }
 });
 
-
+// Fetch messages between users
 app.get('/messages/:userId/:receiverId', async (req, res) => {
     const { userId, receiverId } = req.params;
+
     try {
         const messages = await Message.findAll({
             where: {
-                senderId: [userId, receiverId],
-                receiverId: [userId, receiverId]
+                [Sequelize.Op.or]: [
+                    { senderId: userId, receiverId: receiverId },
+                    { senderId: receiverId, receiverId: userId }
+                ]
             },
             order: [['timestamp', 'ASC']]
         });
         res.status(200).json(messages);
     } catch (error) {
+        console.error('Error fetching messages:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 });
 
+const usersOnline = {};
+
 io.on('connection', (socket) => {
     console.log('New client connected');
 
-    socket.on('login', async (userId) => {
-        socket.userId = userId;
-        io.emit('users_online', userId);
+    socket.on('login', (userId) => {
+        usersOnline[userId] = socket.id;
+        io.emit('users_online', Object.keys(usersOnline));
     });
 
     socket.on('private_message', async ({ senderId, receiverId, message }) => {
         try {
             await Message.create({ senderId, receiverId, message });
-            const receiverSocketId = io.sockets.sockets.get(usersOnline[receiverId]);
+            const receiverSocketId = usersOnline[receiverId];
             if (receiverSocketId) {
                 io.to(receiverSocketId).emit('private_message', { senderId, message });
             }
         } catch (error) {
-            console.log('Error saving message:', error);
+            console.error('Error saving message:', error);
         }
     });
 
     socket.on('disconnect', () => {
+        for (let userId in usersOnline) {
+            if (usersOnline[userId] === socket.id) {
+                delete usersOnline[userId];
+                io.emit('users_online', Object.keys(usersOnline));
+                break;
+            }
+        }
         console.log('Client disconnected');
     });
 });

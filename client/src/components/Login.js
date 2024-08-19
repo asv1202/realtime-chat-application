@@ -3,29 +3,35 @@ import React, { useState } from 'react';
 function Login({ onLogin }) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
 
     const handleLogin = async (e) => {
         e.preventDefault();
-        // Call POST API for login authentication
-        console.log("started");
-        
-        const response = await fetch('http://localhost:4000/login', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ username, password })
-        });
+        setLoading(true);
+        setError('');
 
-        console.log(response);
-        
-        const data = await response.json();
-        console.log(data);
-        
-        if (response.ok) {
-            onLogin(data);
-        } else {
-            alert(data.message);
+        try {
+            const response = await fetch('http://localhost:4000/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ username, password })
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                onLogin(data);
+            } else {
+                setError(data.message || 'Login failed');
+            }
+        } catch (error) {
+            console.error('Login error:', error);
+            setError('An error occurred. Please try again.');
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -36,14 +42,19 @@ function Login({ onLogin }) {
                 placeholder="Username" 
                 value={username} 
                 onChange={(e) => setUsername(e.target.value)} 
+                required
             />
             <input 
                 type="password" 
                 placeholder="Password" 
                 value={password} 
                 onChange={(e) => setPassword(e.target.value)} 
+                required
             />
-            <button type="submit">Login</button>
+            <button type="submit" disabled={loading}>
+                {loading ? 'Logging in...' : 'Login'}
+            </button>
+            {error && <p style={{ color: 'red' }}>{error}</p>}
         </form>
     );
 }
